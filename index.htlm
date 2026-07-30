@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Voti Vacanza">
+    <link rel="apple-touch-icon" href="https://via.placeholder.com/192/FF6B6B/FFFFFF?text=Voti">
+
+    <title>Voti in Vacanza</title>
+
+    <!-- Chart.js per il grafico dell'andamento -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- 1. LIBRERIE FIREBASE AGGIUNTE QUI -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+    <style>
+        :root {
+            var(--primary): #FF6B6B;
+            --secondary: #4ECDC4;
+            --bg-color: #F7F9FC;
+            --card-bg: #FFFFFF;
+            --text-main: #2D3436;
+            --text-light: #636E72;
+            --safe-top: env(safe-area-inset-top, 20px);
+            --safe-bottom: env(safe-area-inset-bottom, 20px);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .view { display: none; flex: 1; overflow-y: auto; padding: calc(var(--safe-top) + 20px) 20px calc(var(--safe-bottom) + 80px) 20px; }
+        .view.active { display: flex; flex-direction: column; animation: fadeIn 0.3s ease; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        h1, h2, h3 { text-align: center; margin-bottom: 15px; color: var(--text-main); }
+        .subtitle { text-align: center; color: var(--text-light); margin-bottom: 30px; font-size: 0.9rem; }
+
+        .card { background: var(--card-bg); border-radius: 20px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        
+        .btn {
+            background: #FF6B6B; color: white; border: none; border-radius: 15px; padding: 18px; font-size: 1.1rem;
+            font-weight: bold; width: 100%; cursor: pointer; transition: transform 0.1s; display: block; text-align: center;
+        }
+        .btn:active { transform: scale(0.96); }
+        .btn-secondary { background: #4ECDC4; }
+        .btn-outline { background: transparent; border: 2px solid #FF6B6B; color: #FF6B6B; }
+
+        input, select, textarea {
+            width: 100%; padding: 15px; border-radius: 12px; border: 1px solid #DFE6E9;
+            font-size: 1rem; margin-bottom: 15px; background: #F8F9FA;
+        }
+
+        .vote-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-bottom: 15px; }
+        .vote-btn {
+            flex: 1 1 calc(20% - 8px); background: #F1F2F6; border: none; border-radius: 10px;
+            padding: 12px 0; font-size: 1.1rem; font-weight: bold; color: var(--text-light);
+        }
+        .vote-btn.selected { background: #4ECDC4; color: white; transform: scale(1.05); box-shadow: 0 4px 10px rgba(78,205,196,0.4); }
+
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,0.9);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            display: flex; justify-content: space-around; padding: 15px 10px calc(var(--safe-bottom) + 10px) 10px;
+            border-top: 1px solid #eee; z-index: 100;
+        }
+        .nav-item { color: var(--text-light); text-align: center; font-size: 0.8rem; flex: 1; }
+        .nav-item.active { color: #FF6B6B; font-weight: bold; }
+        .nav-icon { font-size: 1.5rem; display: block; margin-bottom: 3px; }
+
+        .rank-item { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid #f1f1f1; padding-bottom: 10px; }
+        .rank-pos { font-size: 1.5rem; font-weight: bold; width: 40px; }
+        .rank-name { flex: 1; font-size: 1.1rem; font-weight: 600; }
+        .rank-score { font-size: 1.2rem; font-weight: bold; color: #FF6B6B; }
+    </style>
+</head>
+<body>
+
+    <div id="login-view" class="view active">
+        <h1>🏝️ Benvenuto</h1>
+        <p class="subtitle">Seleziona chi sei per iniziare</p>
+        <div class="card">
+            <select id="login-user"></select>
+            <input type="number" id="login-pin" placeholder="Inserisci PIN (Default: 0000)" pattern="[0-9]*">
+            <button class="btn" onclick="app.login()">Entra</button>
+        </div>
+    </div>
+
+    <div id="home-view" class="view">
+        <h1 id="home-title">Vacanza</h1>
+        <p class="subtitle" id="home-dates">Date</p>
+        <div class="card">
+            <h3>Bentornato, <span id="home-username" style="color: #FF6B6B"></span>! 👋</h3>
+            <p style="text-align: center; font-size: 0.9rem; margin-top: 5px;">Seleziona la giornata da votare</p>
+        </div>
+        <div id="days-container"></div>
+    </div>
+
+    <div id="voting-view" class="view">
+        <h2 id="voting-day-title">Giorno X</h2>
+        <p class="subtitle">Valuta i tuoi compagni di viaggio!</p>
+        <div id="voting-forms-container"></div>
+        <button class="btn btn-secondary" onclick="app.reviewVotes()" style="margin-top: 20px;">Rivedi e Conferma</button>
+        <button class="btn btn-outline" onclick="app.navigate('home')" style="margin-top: 10px;">Annulla</button>
+    </div>
+
+    <div id="leaderboard-view" class="view">
+        <h1>🏆 Classifica</h1>
+        <div class="card" style="background: linear-gradient(135deg, #FF6B6B, #FF8E53); color: white;">
+            <h3 style="color: white; margin-bottom: 5px;">🔥 MVP del Giorno</h3>
+            <p id="mvp-text" style="text-align: center; font-size: 1.2rem; font-weight: bold;">Calcolo in corso...</p>
+        </div>
+        <div class="card">
+            <h3>Generale</h3>
+            <div id="ranking-container"></div>
+        </div>
+        <div class="card">
+            <h3>Andamento</h3>
+            <canvas id="trendChart" width="100" height="70"></canvas>
+        </div>
+    </div>
+
+    <div id="settings-view" class="view">
+        <h1>⚙️ Impostazioni</h1>
+        <div class="card">
+            <h3>Dati Vacanza</h3>
+            <label>Nome:</label>
+            <input type="text" id="set-name">
+            <button class="btn" onclick="app.saveSettings()">Salva Modifiche</button>
+        </div>
+    </div>
+
+    <div class="bottom-nav" id="bottom-nav" style="display: none;">
+        <div class="nav-item active" onclick="app.navigate('home')" id="nav-home"><span class="nav-icon">🏠</span>Home</div>
+        <div class="nav-item" onclick="app.navigate('leaderboard')" id="nav-leaderboard"><span class="nav-icon">🏆</span>Classifica</div>
+        <div class="nav-item" onclick="app.navigate('settings')" id="nav-settings"><span class="nav-icon">⚙️</span>Impostaz.</div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCDeGVAbFG_WMh3ez2TjmgmJl2hpNsvjpc",
+            authDomain: "voti-vacanza-zante.firebaseapp.com",
+            databaseURL: https://voti-vacanza-zante-default-rtdb.europe-west1.firebasedatabase.app/
+            projectId: "voti-vacanza-zante",
+            storageBucket: "voti-vacanza-zante.firebasestorage.app",
+            messagingSenderId: "90583548908",
+            appId: "1:90583548908:web:6738da62182367d52a76c9",
+            measurementId: "G-MHMFV63NVM"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // 3. DATI DI DEFAULT
+        const defaultData = {
+            vacationName: "Grecia 2026 🇬🇷",
+            startDate: "2026-07-31",
+            endDate: "2026-08-06",
+            participants: [
+                { id: "p1", name: "Marco", pin: "0000" },
+                { id: "p2", name: "Luca", pin: "0000" },
+                { id: "p3", name: "Andrea", pin: "0000" },
+                { id: "p4", name: "Matteo", pin: "0000" },
+                { id: "p5", name: "Giulia", pin: "0000" }
+            ],
+            votes: {} 
+        };
+
+        const app = {
+            data: {},
+            currentUser: null,
+            currentVotingDay: null,
+            tempVotes: {},
+            chartInstance: null,
+
+            // INIZIALIZZAZIONE DAL CLOUD
+            init() {
+                db.ref('vacanzaState').on('value', (snapshot) => {
+                    const cloudData = snapshot.val();
+                    if (cloudData) {
+                        this.data = cloudData;
+                    } else {
+                        this.data = JSON.parse(JSON.stringify(defaultData));
+                        this.saveData();
+                    }
+                    
+                    this.populateLogin();
+                    
+                    const sessionUser = sessionStorage.getItem('votiVacanzaUser');
+                    if (sessionUser) {
+                        this.currentUser = this.data.participants.find(p => p.id === sessionUser);
+                        if (document.getElementById('home-view').classList.contains('active')) this.renderHome();
+                        if (document.getElementById('leaderboard-view').classList.contains('active')) this.renderLeaderboard();
+                    }
+                });
+            },
+
+            // SALVATAGGIO SUL CLOUD
+            saveData() {
+                db.ref('vacanzaState').set(this.data);
+            },
+
+            populateLogin() {
+                const select = document.getElementById('login-user');
+                select.innerHTML = '<option value="">Seleziona il tuo nome...</option>';
+                this.data.participants.forEach(p => {
+                    select.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+                });
+            },
+
+            login() {
+                const userId = document.getElementById('login-user').value;
+                const pin = document.getElementById('login-pin').value;
+                if (!userId) return alert("Seleziona un utente!");
+                const user = this.data.participants.find(p => p.id === userId);
+                if (pin !== user.pin) return alert("PIN errato! (Il PIN di default è 0000)");
+                
+                this.currentUser = user;
+                sessionStorage.setItem('votiVacanzaUser', user.id);
+                this.navigate('home');
+            },
+
+            navigate(viewId) {
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
+                document.getElementById(`${viewId}-view`).classList.add('active');
+                if(document.getElementById(`nav-${viewId}`)) document.getElementById(`nav-${viewId}`).classList.add('active');
+                document.getElementById('bottom-nav').style.display = (viewId === 'login') ? 'none' : 'flex';
+
+                if (viewId === 'home') this.renderHome();
+                if (viewId === 'leaderboard') this.renderLeaderboard();
+                if (viewId === 'settings') this.renderSettings();
+            },
+
+            getDaysArray() {
+                const start = new Date(this.data.startDate);
+                const end = new Date(this.data.endDate);
+                let days = [];
+                let current = new Date(start);
+                let dayCount = 1;
+                while (current <= end) {
+                    days.push({
+                        dateStr: current.toISOString().split('T')[0],
+                        label: `Giorno ${dayCount}`,
+                        displayDate: current.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })
+                    });
+                    current.setDate(current.getDate() + 1);
+                    dayCount++;
+                }
+                return days;
+            },
+
+            renderHome() {
+                document.getElementById('home-title').innerText = this.data.vacationName;
+                const dStart = new Date(this.data.startDate).toLocaleDateString('it-IT');
+                const dEnd = new Date(this.data.endDate).toLocaleDateString('it-IT');
+                document.getElementById('home-dates').innerText = `${dStart} ➔ ${dEnd}`;
+                document.getElementById('home-username').innerText = this.currentUser.name;
+
+                const daysContainer = document.getElementById('days-container');
+                daysContainer.innerHTML = '';
+
+                this.getDaysArray().forEach(day => {
+                    const dayVotes = this.data.votes[day.dateStr] || {};
+                    const hasVoted = !!dayVotes[this.currentUser.id];
+                    const btnColor = hasVoted ? 'btn-secondary' : 'btn';
+                    const btnText = hasVoted ? '✅ Modifica Voti' : '📝 Inizia a Votare';
+
+                    daysContainer.innerHTML += `
+                        <div class="card" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <h3 style="margin: 0; text-align: left;">${day.label}</h3>
+                                <p style="color: #636E72; font-size: 0.9rem;">${day.displayDate}</p>
+                            </div>
+                            <button class="${btnColor}" style="width: auto; padding: 10px 15px; font-size: 0.9rem; border-radius: 10px; color: white; border: none; font-weight: bold;" onclick="app.startVoting('${day.dateStr}', '${day.label} - ${day.displayDate}')">${btnText}</button>
+                        </div>
+                    `;
+                });
+            },
+
+            startVoting(dateStr, displayTitle) {
+                this.currentVotingDay = dateStr;
+                this.tempVotes = {};
+                if (this.data.votes[dateStr] && this.data.votes[dateStr][this.currentUser.id]) {
+                    this.tempVotes = JSON.parse(JSON.stringify(this.data.votes[dateStr][this.currentUser.id]));
+                }
+                document.getElementById('voting-day-title').innerText = displayTitle;
+                const container = document.getElementById('voting-forms-container');
+                container.innerHTML = '';
+                const otherParticipants = this.data.participants.filter(p => p.id !== this.currentUser.id);
+
+                otherParticipants.forEach(p => {
+                    const existingVote = this.tempVotes[p.id]?.score || 0;
+                    const existingComment = this.tempVotes[p.id]?.comment || '';
+                    let btnsHTML = '';
+                    for(let i=1; i<=10; i++) {
+                        const selectedClass = (i === existingVote) ? 'selected' : '';
+                        btnsHTML += `<button class="vote-btn ${selectedClass}" onclick="app.selectVote('${p.id}', ${i}, this)">${i}</button>`;
+                    }
+                    container.innerHTML += `
+                        <div class="card">
+                            <h3 style="text-align: left;">${p.name}</h3>
+                            <div class="vote-grid" id="grid-${p.id}">${btnsHTML}</div>
+                            <textarea id="comment-${p.id}" placeholder="Commento (opzionale)..." rows="2">${existingComment}</textarea>
+                        </div>
+                    `;
+                });
+                this.navigate('voting');
+            },
+
+            selectVote(targetId, score, btnElement) {
+                const grid = document.getElementById(`grid-${targetId}`);
+                grid.querySelectorAll('.vote-btn').forEach(b => b.classList.remove('selected'));
+                btnElement.classList.add('selected');
+                if(!this.tempVotes[targetId]) this.tempVotes[targetId] = {};
+                this.tempVotes[targetId].score = score;
+            },
+
+            reviewVotes() {
+                const otherParticipants = this.data.participants.filter(p => p.id !== this.currentUser.id);
+                for (let p of otherParticipants) {
+                    if (!this.tempVotes[p.id] || !this.tempVotes[p.id].score) {
+                        alert(`Devi assegnare un voto a ${p.name}!`);
+                        return;
+                    }
+                    this.tempVotes[p.id].comment = document.getElementById(`comment-${p.id}`).value;
+                }
+                if(confirm("Vuoi confermare e salvare i voti per questa giornata?")) {
+                    if(!this.data.votes[this.currentVotingDay]) this.data.votes[this.currentVotingDay] = {};
+                    this.data.votes[this.currentVotingDay][this.currentUser.id] = this.tempVotes;
+                    this.saveData();
+                    alert("Voti salvati con successo!");
+                    this.navigate('home');
+                }
+            },
+
+            renderLeaderboard() {
+                const stats = {};
+                this.data.participants.forEach(p => {
+                    stats[p.id] = { name: p.name, totalScore: 0, count: 0, history: {} };
+                });
+
+                const days = this.getDaysArray();
+                let lastMVP = "Nessuno (ancora)";
+                let highestDailyAvg = 0;
+
+                days.forEach(day => {
+                    const dayVotes = this.data.votes[day.dateStr];
+                    let dailyScores = {};
+                    if(dayVotes) {
+                        Object.values(dayVotes).forEach(voterData => {
+                            Object.entries(voterData).forEach(([targetId, voteData]) => {
+                                stats[targetId].totalScore += voteData.score;
+                                stats[targetId].count += 1;
+                                if(!dailyScores[targetId]) dailyScores[targetId] = { total: 0, count: 0 };
+                                dailyScores[targetId].total += voteData.score;
+                                dailyScores[targetId].count += 1;
+                            });
+                        });
+                    }
+                    let dayMVP = null;
+                    let dayMax = 0;
+                    Object.keys(dailyScores).forEach(pId => {
+                        const avg = dailyScores[pId].total / dailyScores[pId].count;
+                        stats[pId].history[day.dateStr] = avg;
+                        if(avg > dayMax) { dayMax = avg; dayMVP = stats[pId].name; }
+                    });
+                    if(dayMVP) lastMVP = `${dayMVP} (${dayMax.toFixed(1)} ⭐️)`;
+                });
+
+                document.getElementById('mvp-text').innerText = lastMVP;
+
+                let rankingArray = Object.values(stats).map(s => {
+                    return { name: s.name, avg: s.count > 0 ? (s.totalScore / s.count).toFixed(2) : "0.00" };
+                });
+                rankingArray.sort((a, b) => b.avg - a.avg);
+
+                const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"];
+                const container = document.getElementById('ranking-container');
+                container.innerHTML = '';
+                rankingArray.forEach((r, index) => {
+                    container.innerHTML += `
+                        <div class="rank-item">
+                            <div class="rank-pos">${medals[index] || (index+1)}</div>
+                            <div class="rank-name">${r.name}</div>
+                            <div class="rank-score">${r.avg}</div>
+                        </div>
+                    `;
+                });
+
+                this.renderChart(stats, days);
+            },
+
+            renderChart(stats, days) {
+                const ctx = document.getElementById('trendChart').getContext('2d');
+                if(this.chartInstance) this.chartInstance.destroy();
+                const labels = days.map(d => d.label.replace('Giorno ', 'G'));
+                const colors = ['#FF6B6B', '#4ECDC4', '#55E6C1', '#FDCB6E', '#6C5CE7'];
+                
+                const datasets = this.data.participants.map((p, idx) => {
+                    const data = days.map(d => stats[p.id].history[d.dateStr] || null);
+                    return { label: p.name, data: data, borderColor: colors[idx % colors.length], backgroundColor: colors[idx % colors.length], tension: 0.4, spanGaps: true };
+                });
+
+                this.chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels, datasets },
+                    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }, scales: { y: { min: 1, max: 10 } } }
+                });
+            },
+
+            renderSettings() {
+                document.getElementById('set-name').value = this.data.vacationName;
+            },
+
+            saveSettings() {
+                this.data.vacationName = document.getElementById('set-name').value;
+                this.saveData();
+                alert("Impostazioni salvate!");
+            }
+        };
+
+        window.onload = () => app.init();
+    </script>
+</body>
+</html>
