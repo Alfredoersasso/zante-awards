@@ -190,12 +190,14 @@
             tempVotes: {},
             chartInstance: null,
 
-            // INIZIALIZZAZIONE DAL CLOUD
+                        // INIZIALIZZAZIONE DAL CLOUD
             init() {
                 db.ref('vacanzaState').on('value', (snapshot) => {
                     const cloudData = snapshot.val();
                     if (cloudData) {
                         this.data = cloudData;
+                        // LA RIGA MAGICA SALVA-APP:
+                        if (!this.data.votes) this.data.votes = {}; 
                     } else {
                         this.data = JSON.parse(JSON.stringify(defaultData));
                         this.saveData();
@@ -211,6 +213,7 @@
                     }
                 });
             },
+
 
             // SALVATAGGIO SUL CLOUD
             saveData() {
